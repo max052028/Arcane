@@ -16,6 +16,7 @@ public class PlayerController : Singleton<PlayerController>
     [SerializeField] private float gravityMultiplier = 1.0f;
     [SerializeField] private float coyoteTime = 0.1f;
     [SerializeField] private float fallGravityMultiplier = 1.5f;
+    [SerializeField] private float airResistance = 9.8f;
 
     [Header("Combat Settings")]
     [SerializeField] private float basicAttackRecoveryTime = 0.5f;
@@ -25,8 +26,15 @@ public class PlayerController : Singleton<PlayerController>
     [SerializeField] private float castBufferTime = 0.5f;
 
     private CharacterController cc;
+    private CameraController cameraController;
+    private StaminaSystem staminaSystem;
+    private InputBuffer inputBuffer;
+
     private Vector3 moveDirection;
-    private float verticalVelocity;
+    private Vector3 slideDirection;
+    private Vector3 airMoveVelocity = Vector3.zero;
+    private Vector3 vector;
+
     private PositionStatus _posStatus;
     public PositionStatus posStatus
     {
@@ -40,18 +48,22 @@ public class PlayerController : Singleton<PlayerController>
             }
         }
     }
-    private CameraController cameraController;
-    private bool isRecovering = false;
+
+    private float verticalVelocity;
     private float recoveryEndTime;
-    private InputBuffer inputBuffer;
-    private bool isSliding = false;
-    private Vector3 slideDirection;
-    private StaminaSystem staminaSystem;
-    private bool wasGrounded;
     private float coyoteTimeCounter = 0f;
     private float jumpBufferCounter;
+    private float wallSlowTimer = 0f;
+
+    private bool isRecovering = false;
+    private bool isSliding = false;
+    private bool wasGrounded;
     private bool isMovable = true;
-    private Vector3 airMoveVelocity = Vector3.zero;
+    private bool canWallJump = false;
+    private bool isGliding = false;
+    private bool jumpKeyHeld = false;
+    private bool hasGlideJustStarted = false;
+    private bool wallJumpSlowActive = false;
 
     #region Jump Variables
     private enum JumpState
@@ -80,11 +92,6 @@ public class PlayerController : Singleton<PlayerController>
     [SerializeField] private float slideJumpForce = 10f;
     #endregion
 
-    private Vector3 wallNormal;
-    private bool canWallJump = false;
-    private bool isGliding = false;
-    private bool jumpKeyHeld = false;
-    private float wallSlowTimer = 0f;
 
     private void Start()
     {
@@ -193,9 +200,74 @@ public class PlayerController : Singleton<PlayerController>
         bool jumpHeld = Input.GetButton("Jump");
         bool jumpReleased = Input.GetButtonUp("Jump");
 
-        // 狀態切換與行為
+        // 若落地，重置滑翔與減速狀態
+        if (posStatus == PositionStatus.Grounded)
+        {
+            isGliding = false;
+            hasGlideJustStarted = false;
+            wallJumpSlowActive = false;
+            Time.timeScale = 1f;
+        }
+
         switch (posStatus)
         {
+            case PositionStatus.Midair:
+                if (jumpPressed)
+                {
+                    if (CheckWallNearby(out vector))
+                    {
+                        jumpState = JumpState.WallSlow;
+                        wallJumpSlowActive = true;
+                        Time.timeScale = 0.2f; // 進入減速
+                    }
+                }
+                if (jumpState == JumpState.WallSlow && jumpHeld)
+                {
+                    if (!CheckWallNearby(out vector))
+                    {
+                        // 失去合格面，結束減速
+                        jumpState = JumpState.None;
+                        wallJumpSlowActive = false;
+                        Time.timeScale = 1f;
+                    }
+                }
+                if (jumpState == JumpState.WallSlow && jumpReleased)
+                {
+                    if (CheckWallNearby(out vector))
+                    {
+                        // 蹬牆跳
+                        Vector3 camForward = cameraController.transform.forward;
+                        Vector3 jumpDir = CalcWallJumpDir(vector, camForward, wallJumpMaxAngle);
+                        verticalVelocity = wallJumpForce;
+                        moveDirection = jumpDir * wallJumpForce;
+                        cc.Move(moveDirection * Time.deltaTime);
+                    }
+                    // 結束減速
+                    jumpState = JumpState.None;
+                    wallJumpSlowActive = false;
+                    Time.timeScale = 1f;
+                }
+                if (jumpState != JumpState.WallSlow && jumpPressed && !isGliding)
+                {
+                    jumpState = JumpState.Glide;
+                    isGliding = true;
+                    hasGlideJustStarted = true;
+                    if (verticalVelocity > 0f)
+                        verticalVelocity = 0f;
+                }
+                // 滑翔狀態
+                if (jumpState == JumpState.Glide && isGliding)
+                {
+                    // 滑翔邏輯（可調整重力或水平移動）
+                    verticalVelocity = Mathf.Max(verticalVelocity, -2f); // 減緩下墜
+                    if (!hasGlideJustStarted && jumpPressed)
+                    {
+                        jumpState = JumpState.None;
+                        isGliding = false;
+                    }
+                    hasGlideJustStarted = false;
+                }
+                break;
             case PositionStatus.Grounded:
             case PositionStatus.CoyoteTime:
                 if (jumpPressed && staminaSystem.CanUseStamina(minJumpStamina))
@@ -235,71 +307,11 @@ public class PlayerController : Singleton<PlayerController>
                     }
                 }
                 break;
-            case PositionStatus.Midair:
-                if (jumpPressed)
-                {
-                    // 檢查附近可蹬牆面
-                    if (CheckWallNearby(out wallNormal))
-                    {
-                        jumpState = JumpState.WallReady;
-                        canWallJump = true;
-                        wallSlowTimer = 0f;
-                    }
-                    else
-                    {
-                        jumpState = JumpState.Glide;
-                        isGliding = true;
-                    }
-                }
-                // 蹬牆時空減速
-                if (jumpState == JumpState.WallReady && jumpHeld && canWallJump)
-                {
-                    jumpState = JumpState.WallSlow;
-                    wallSlowTimer += Time.deltaTime;
-                    // 這裡可觸發時空減速效果（如調整 Time.timeScale）
-                }
-                if ((jumpState == JumpState.WallSlow || jumpState == JumpState.WallReady) && jumpReleased && canWallJump)
-                {
-                    // 計算蹬牆方向
-                    Vector3 camForward = cameraController.transform.forward;
-                    float angle = Vector3.Angle(camForward, wallNormal);
-                    Vector3 jumpDir;
-                    if (angle < wallJumpMaxAngle)
-                        jumpDir = camForward.normalized;
-                    else
-                        jumpDir = Vector3.Slerp(wallNormal, camForward, wallJumpMaxAngle / angle).normalized;
-                    verticalVelocity = wallJumpForce;
-                    moveDirection = jumpDir * wallJumpForce;
-                    cc.Move(moveDirection * Time.deltaTime);
-                    // 結束時空減速
-                    jumpState = JumpState.None;
-                    canWallJump = false;
-                }
-                // 若脫離可蹬牆狀態
-                if ((jumpState == JumpState.WallSlow || jumpState == JumpState.WallReady) && !CheckWallNearby(out wallNormal))
-                {
-                    jumpState = JumpState.None;
-                    canWallJump = false;
-                    // 結束時空減速
-                }
-                // 滑翔狀態
-                if (jumpState == JumpState.Glide && isGliding)
-                {
-                    // 滑翔邏輯（可調整重力或水平移動）
-                    verticalVelocity = Mathf.Max(verticalVelocity, -2f); // 減緩下墜
-                    if (jumpPressed)
-                    {
-                        jumpState = JumpState.None;
-                        isGliding = false;
-                    }
-                }
-                break;
             case PositionStatus.Sliding:
                 if (jumpReleased)
                 {
-                    // 依地面法線跳出
                     RaycastHit hit;
-                    if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, 3, groundLayer))
+                    if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, 3))
                     {
                         Vector3 jumpDir = hit.normal;
                         airMoveVelocity = jumpDir * slideJumpForce;
@@ -329,23 +341,72 @@ public class PlayerController : Singleton<PlayerController>
 
         // 空中移動：維持跳躍初速的水平分量
         Vector3 totalMove = airMoveVelocity * Time.deltaTime + new Vector3(0, verticalVelocity, 0) * Time.deltaTime;
+        airMoveVelocity = Vector3.Lerp(airMoveVelocity, Vector3.zero, airResistance * Time.deltaTime);
         cc.Move(totalMove);
     }
 
-    // 檢查附近可蹬牆面
-    private bool CheckWallNearby(out Vector3 normal)
+    // 找出最近的朝下面
+    private bool CheckWallNearby(out Vector3 vector)
     {
-        RaycastHit hit;
-        if (Physics.SphereCast(transform.position, wallCheckRadius, transform.forward, out hit, wallCheckRadius, groundLayer))
+        Vector3 origin = transform.position + Vector3.up * 1.0f;
+        float checkDistance = wallCheckRadius * 2f;
+        Collider[] colliders = Physics.OverlapSphere(origin, wallCheckRadius, groundLayer);
+        if (colliders.Length == 0)
         {
-            if (Vector3.Angle(hit.normal, Vector3.up) > 10f && Vector3.Angle(hit.normal, Vector3.up) < 170f)
+            vector = Vector3.zero;
+            return false; // 沒有找到任何碰撞體
+        }
+        foreach (Collider collider in colliders)
+        {
+            Vector3 currVector = collider.ClosestPoint(origin) - origin;
+            if (Vector3.Angle(currVector, Vector3.down) < 90f)
             {
-                normal = hit.normal;
-                return true;
+                Debug.Log($"Found wall collider: {collider.name}, Direction: {currVector}");
+                vector = currVector;
+                return true; // 找到一個朝下的碰撞體
             }
+        }
+        vector = Vector3.zero;
+        return false; // 沒有找到朝下的碰撞體
+
+        /*
+        float minDist = float.MaxValue;
+        Vector3 bestNormal = Vector3.zero;
+        bool found = false;
+        foreach (var hit in hits)
+        {
+            Debug.Log($"Hit: {hit.collider.name}, Normal: {hit.normal}, Distance: {hit.distance}");
+            float downAngle = Vector3.Angle(hit.normal, Vector3.down);
+            Debug.Log($"Down Angle: {downAngle}");
+            if (downAngle < 90f) // 朝下
+            {
+                float dist = hit.distance;
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    bestNormal = hit.normal;
+                    found = true;
+                }
+            }
+        }
+        if (found)
+        {
+            normal = bestNormal;
+            return true;
         }
         normal = Vector3.zero;
         return false;
+        */
+    }
+
+    // 蹬牆跳方向計算
+    private Vector3 CalcWallJumpDir(Vector3 vector, Vector3 camForward, float maxAngle)
+    {
+        float angle = Vector3.Angle(camForward, vector);
+        if (angle < maxAngle)
+            return camForward.normalized;
+        else
+            return Vector3.Slerp(vector, camForward, maxAngle / angle).normalized;
     }
 
     private void HandleSliding()
@@ -395,7 +456,7 @@ public class PlayerController : Singleton<PlayerController>
 
             // 檢查是否在陡坡上
             RaycastHit hit;
-            if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, 10, groundLayer))
+            if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, 10))
             {
                 float slopeAngle = Vector3.Angle(hit.normal, Vector3.up);
                 if (slopeAngle > maxSlopeAngle)
