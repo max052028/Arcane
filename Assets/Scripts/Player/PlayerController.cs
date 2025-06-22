@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 public class PlayerController : Singleton<PlayerController>
 {
@@ -29,6 +30,7 @@ public class PlayerController : Singleton<PlayerController>
     private CameraController cameraController;
     private StaminaSystem staminaSystem;
     private InputBuffer inputBuffer;
+    private List<ParticleSystem> existingEffects = new List<ParticleSystem>();
 
     private Vector3 moveDirection;
     private Vector3 slideDirection;
@@ -80,6 +82,7 @@ public class PlayerController : Singleton<PlayerController>
     private float jumpChargeTime = 0f;
 
     [Header("Jump Settings")]
+    [SerializeField] private ParticleSystem jumpEffect;
     [SerializeField] private float maxJumpChargeTime = 1.0f;
     [SerializeField] private float minJumpForce = 8f;
     [SerializeField] private float maxJumpForce = 16f;
@@ -114,6 +117,13 @@ public class PlayerController : Singleton<PlayerController>
         if (isMovable) HandleMovement();
         if (posStatus == PositionStatus.Sliding) HandleSliding();
         HandleJump();
+        foreach (var effect in existingEffects)
+        {
+            if (effect != null && !effect.isPlaying)
+            {
+                Destroy(effect.gameObject);
+            }
+        }
     }
 
     /*
@@ -293,9 +303,10 @@ public class PlayerController : Singleton<PlayerController>
                             // 跳躍方向：地面法線
                             Vector3 jumpDir = Vector3.up;
                             RaycastHit hit;
-                            if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, groundCheckDistance + 0.1f, groundLayer))
+                            if (Physics.Raycast(transform.position, Vector3.down, out hit, groundCheckDistance + 0.1f))
                             {
                                 jumpDir = hit.normal;
+                                existingEffects.Add(Instantiate(jumpEffect, hit.point, Quaternion.LookRotation(hit.normal)));
                             }
                             airMoveVelocity = jumpDir * force;
                             verticalVelocity = airMoveVelocity.y;
