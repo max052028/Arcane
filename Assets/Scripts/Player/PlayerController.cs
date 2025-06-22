@@ -8,7 +8,6 @@ public class PlayerController : Singleton<PlayerController>
     [SerializeField] private float moveSpeed = 5f;
     [SerializeField] private float sprintSpeed = 8f;
     [SerializeField] private float rotationSpeed = 10f;
-    [SerializeField] private float jumpForce = 8f;
     [SerializeField] private float groundCheckDistance = 0.4f;
     [SerializeField] private float groundCheckRadius = 0.4f;
     [SerializeField] private LayerMask groundLayer;
@@ -24,7 +23,6 @@ public class PlayerController : Singleton<PlayerController>
 
     [Header("Input Buffer Settings")]
     [SerializeField] private float jumpBufferTime = 0.2f;
-    [SerializeField] private float castBufferTime = 0.5f;
 
     private CharacterController cc;
     private CameraController cameraController;
@@ -59,9 +57,7 @@ public class PlayerController : Singleton<PlayerController>
 
     private bool isRecovering = false;
     private bool isSliding = false;
-    private bool wasGrounded;
     private bool isMovable = true;
-    private bool canWallJump = false;
     private bool isGliding = false;
     private bool jumpKeyHeld = false;
     private bool hasGlideJustStarted = false;
@@ -99,7 +95,7 @@ public class PlayerController : Singleton<PlayerController>
     private void Start()
     {
         cc = GetComponent<CharacterController>();
-        cameraController = FindObjectOfType<CameraController>();
+        cameraController = CameraController.instance;
         inputBuffer = GetComponent<InputBuffer>();
         staminaSystem = GetComponent<StaminaSystem>();
 
@@ -125,44 +121,6 @@ public class PlayerController : Singleton<PlayerController>
             }
         }
     }
-
-    /*
-    private void CheckGround()
-    {
-        // 直接使用 CharacterController.isGrounded
-        isGrounded = cc.isGrounded;
-        Debug.Log($"CharacterController.isGrounded: {isGrounded}");
-
-        // 更新土狼時間
-        if (isGrounded)
-        {
-            coyoteTimeCounter = coyoteTime;
-        }
-        else
-        {
-            coyoteTimeCounter -= Time.deltaTime;
-        }
-
-        if (isGrounded)
-        {
-            // 檢查是否在陡坡上
-            RaycastHit hit;
-            if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, groundCheckDistance + 0.1f, groundLayer))
-            {
-                float slopeAngle = Vector3.Angle(hit.normal, Vector3.up);
-                if (slopeAngle > maxSlopeAngle)
-                {
-                    isSliding = true;
-                    slideDirection = Vector3.ProjectOnPlane(Vector3.down, hit.normal).normalized;
-                }
-                else
-                {
-                    isSliding = false;
-                }
-            }
-        }
-    }
-    */
 
     private void HandleMovement()
     {
@@ -247,10 +205,11 @@ public class PlayerController : Singleton<PlayerController>
                     {
                         // 蹬牆跳
                         Vector3 camForward = cameraController.transform.forward;
+                        Debug.Log($"Wall jump direction: {vector}, Camera forward: {camForward}");
                         Vector3 jumpDir = CalcWallJumpDir(vector, camForward, wallJumpMaxAngle);
-                        verticalVelocity = wallJumpForce;
-                        moveDirection = jumpDir * wallJumpForce;
-                        cc.Move(moveDirection * Time.deltaTime);
+                        airMoveVelocity = jumpDir * wallJumpForce;
+                        verticalVelocity = airMoveVelocity.y;
+                        airMoveVelocity.y = 0f;
                     }
                     // 結束減速
                     jumpState = JumpState.None;
@@ -334,7 +293,7 @@ public class PlayerController : Singleton<PlayerController>
                 break;
         }
 
-        // 應用重力
+        #region 應用重力
         if (verticalVelocity > 0)
         {
             verticalVelocity += Physics.gravity.y * gravityMultiplier * Time.deltaTime;
@@ -354,12 +313,13 @@ public class PlayerController : Singleton<PlayerController>
         Vector3 totalMove = airMoveVelocity * Time.deltaTime + new Vector3(0, verticalVelocity, 0) * Time.deltaTime;
         airMoveVelocity = Vector3.Lerp(airMoveVelocity, Vector3.zero, airResistance * Time.deltaTime);
         cc.Move(totalMove);
+        #endregion
     }
 
     // 找出最近的朝下面
     private bool CheckWallNearby(out Vector3 vector)
     {
-        Vector3 origin = transform.position + Vector3.up * 1.0f;
+        Vector3 origin = transform.position;
         float checkDistance = wallCheckRadius * 2f;
         Collider[] colliders = Physics.OverlapSphere(origin, wallCheckRadius, groundLayer);
         if (colliders.Length == 0)
@@ -369,7 +329,7 @@ public class PlayerController : Singleton<PlayerController>
         }
         foreach (Collider collider in colliders)
         {
-            Vector3 currVector = collider.ClosestPoint(origin) - origin;
+            Vector3 currVector = origin - collider.ClosestPoint(origin);
             if (Vector3.Angle(currVector, Vector3.down) < 90f)
             {
                 Debug.Log($"Found wall collider: {collider.name}, Direction: {currVector}");
@@ -379,35 +339,6 @@ public class PlayerController : Singleton<PlayerController>
         }
         vector = Vector3.zero;
         return false; // 沒有找到朝下的碰撞體
-
-        /*
-        float minDist = float.MaxValue;
-        Vector3 bestNormal = Vector3.zero;
-        bool found = false;
-        foreach (var hit in hits)
-        {
-            Debug.Log($"Hit: {hit.collider.name}, Normal: {hit.normal}, Distance: {hit.distance}");
-            float downAngle = Vector3.Angle(hit.normal, Vector3.down);
-            Debug.Log($"Down Angle: {downAngle}");
-            if (downAngle < 90f) // 朝下
-            {
-                float dist = hit.distance;
-                if (dist < minDist)
-                {
-                    minDist = dist;
-                    bestNormal = hit.normal;
-                    found = true;
-                }
-            }
-        }
-        if (found)
-        {
-            normal = bestNormal;
-            return true;
-        }
-        normal = Vector3.zero;
-        return false;
-        */
     }
 
     // 蹬牆跳方向計算
@@ -447,17 +378,6 @@ public class PlayerController : Singleton<PlayerController>
         return isRecovering;
     }
 
-    private void OnDrawGizmosSelected()
-    {
-        // 繪製地面檢測範圍
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(transform.position + Vector3.up * groundCheckRadius, groundCheckRadius);
-
-        // 繪製地面檢測射線
-        Gizmos.color = Color.red;
-        Gizmos.DrawLine(transform.position + Vector3.up * 0.1f, transform.position + Vector3.up * 0.1f + Vector3.down * (groundCheckDistance + 0.1f));
-    }
-
     private void UpdateStatus()
     {
         if (cc.isGrounded) // Now on the ground
@@ -479,7 +399,11 @@ public class PlayerController : Singleton<PlayerController>
         }
         else if (posStatus == PositionStatus.CoyoteTime) // In coyote time
         {
-            if (coyoteTimeCounter > 0.1f)
+            if (coyoteTimeCounter > coyoteTime) // Coyote time expired
+            {
+                posStatus = PositionStatus.Midair; // Transition to midair
+            }
+            else if (cc.isGrounded) // Still in coyote time but now grounded
             {
                 posStatus = PositionStatus.Midair;
                 coyoteTimeCounter = 0f; // Reset coyote time counter

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class CameraController : MonoBehaviour
+public class CameraController : Singleton<CameraController>
 {
     [Header("Camera Settings")]
     [SerializeField] private float mouseSensitivity = 2f;
