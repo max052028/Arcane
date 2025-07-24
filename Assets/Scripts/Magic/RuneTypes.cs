@@ -14,8 +14,13 @@ public enum ElementType
     Water,
     Wind,
     Earth,
+    Wood,
+    Ice,
     Lightning,
-    Ice
+    Poison,
+    Dark,
+    Holy,
+    Chrono
 }
 
 public enum BehaviorType

@@ -12,20 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 467209ff5cc6c56439f6c1e616b167ad, type: 3}
   m_Name: FireBall
   m_EditorClassIdentifier: 
-  spellName: FireBall
-  description: 
-  spellIcon: {fileID: 0}
-  validSequences:
-  - elementRunes:
-    - {fileID: 11400000, guid: d73b0715bbba5fa498c3660f46d5ff7f, type: 2}
-    behaviorRune: {fileID: 11400000, guid: 648932fafe0d2124d99c6e3b12d0e122, type: 2}
-    modifierRunes: []
-    traitRune: {fileID: 0}
-    description: 
-    spellEffectPrefab: {fileID: 8768337489451693589, guid: 5854097f1f9ec9144bea5eacc1a76ecb, type: 3}
-    baseDamage: 10
-    baseDuration: 10
-    baseRange: 5
-    baseSpeed: 10
-    baseSize: 1
-    recoveryTime: 1
+  Id: 
+  Name: 
+  prefab: {fileID: 8768337489451693589, guid: 5854097f1f9ec9144bea5eacc1a76ecb, type: 3}
+  elements: 00000000
+  behaviors: 00000000
+  acceptModifiers: 

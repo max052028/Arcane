@@ -25,6 +25,7 @@ public class PlayerController : Singleton<PlayerController>
     [SerializeField] private float jumpBufferTime = 0.2f;
 
     private CharacterController cc;
+    private Animator animator;
     private CameraController cameraController;
     private StaminaSystem staminaSystem;
     private InputBuffer inputBuffer;
