@@ -63,6 +63,9 @@ public class PlayerController : Singleton<PlayerController>
     private bool jumpKeyHeld = false;
     private bool hasGlideJustStarted = false;
     private bool wallJumpSlowActive = false;
+    private bool isDirectionalCasting = false;
+
+    private MovementStatus movementStatus = MovementStatus.Idle;
 
     #region Jump Variables
     private enum JumpState
@@ -97,6 +100,7 @@ public class PlayerController : Singleton<PlayerController>
     {
         cc = GetComponent<CharacterController>();
         cameraController = CameraController.instance;
+        animator = GetComponent<Animator>();
         inputBuffer = GetComponent<InputBuffer>();
         staminaSystem = GetComponent<StaminaSystem>();
 
@@ -125,8 +129,8 @@ public class PlayerController : Singleton<PlayerController>
 
     private void HandleMovement()
     {
-        // Don't handle movement if casting
-        if (cameraController.IsCasting())
+        // Don't handle movement if casting or in directional casting mode
+        if (cameraController.IsCasting() || isDirectionalCasting)
             return;
 
         float horizontal = Input.GetAxisRaw("Horizontal");
@@ -136,6 +140,8 @@ public class PlayerController : Singleton<PlayerController>
 
         if (movement.magnitude >= 0.1f)
         {
+            movementStatus = MovementStatus.Walking;
+
             // Get camera's forward direction, but ignore Y component
             Vector3 cameraForward = cameraController.transform.forward;
             cameraForward.y = 0;
@@ -150,6 +156,7 @@ public class PlayerController : Singleton<PlayerController>
 
             if (currentSpeed == sprintSpeed)
             {
+                movementStatus = MovementStatus.Sprinting;
                 staminaSystem.UseSprintStamina();
             }
 
@@ -160,6 +167,12 @@ public class PlayerController : Singleton<PlayerController>
             Quaternion targetRotation = Quaternion.LookRotation(moveDir);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
         }
+        else
+        {
+            movementStatus = MovementStatus.Idle;
+        }
+
+        animator.SetInteger("movement", (int)movementStatus);
     }
 
     private void HandleJump()
@@ -379,6 +392,32 @@ public class PlayerController : Singleton<PlayerController>
         return isRecovering;
     }
 
+    public void EnableDirectionalCasting()
+    {
+        isDirectionalCasting = true;
+        Debug.Log("Directional casting enabled - player movement disabled");
+    }
+
+    public void DisableDirectionalCasting()
+    {
+        isDirectionalCasting = false;
+        Debug.Log("Directional casting disabled - player movement enabled");
+    }
+
+    public bool IsDirectionalCasting()
+    {
+        return isDirectionalCasting;
+    }
+
+    public void HandleDirectionalCastingRotation(float mouseX)
+    {
+        if (isDirectionalCasting)
+        {
+            // Rotate player horizontally based on mouse input
+            transform.Rotate(Vector3.up * mouseX);
+        }
+    }
+
     private void UpdateStatus()
     {
         if (cc.isGrounded) // Now on the ground
@@ -423,4 +462,14 @@ public class PlayerController : Singleton<PlayerController>
             posStatus = PositionStatus.Midair; // Default to midair if not grounded or in coyote time
         }
     }
+}
+
+public enum MovementStatus
+{
+    Idle,
+    Walking,
+    Sprinting,
+    Sliding,
+    Recovering,
+    Casting
 }

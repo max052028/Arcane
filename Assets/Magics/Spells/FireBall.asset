@@ -12,9 +12,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 467209ff5cc6c56439f6c1e616b167ad, type: 3}
   m_Name: FireBall
   m_EditorClassIdentifier: 
-  Id: 
-  Name: 
+  Id: 001
+  Name: "\u706B\u7403\u8853"
+  castingMode: 2
   prefab: {fileID: 8768337489451693589, guid: 5854097f1f9ec9144bea5eacc1a76ecb, type: 3}
   elements: 00000000
   behaviors: 00000000
-  acceptModifiers: 
+  acceptModifiers: 0000000004000000
+  basePower: 10
+  baseDuration: 5
+  baseRange: 100
+  baseSpeed: 20
+  baseSize: 1

@@ -19,6 +19,10 @@ public class CameraController : Singleton<CameraController>
     [SerializeField] private float spellCastingDistance = 2f;
     [SerializeField] private float spellCastingTransitionTime = 0.3f;
     
+    [Header("First Person Settings")]
+    [SerializeField] private Transform fppTransform; // FPP 空物件的 Transform
+    [SerializeField] private float fppTransitionSpeed = 5f;
+    
     private Transform playerTransform;
     private float verticalRotation = 0f;
     private float horizontalRotation = 0f;
@@ -30,6 +34,10 @@ public class CameraController : Singleton<CameraController>
     private float targetDistance;
     private float distanceVelocity;
     private bool isCasting = false;
+    private bool isDirectionalCasting = false;
+    private Transform originalParent;
+    private Vector3 originalPosition;
+    private Quaternion originalRotation;
     
     private void Start()
     {
@@ -39,6 +47,13 @@ public class CameraController : Singleton<CameraController>
             Debug.LogError("Player not found in scene!");
             enabled = false;
             return;
+        }
+        
+        // Check if FPP transform is assigned, if not create one
+        if (fppTransform == null)
+        {
+            Debug.LogWarning("FPP Transform not assigned. Creating default FPP position...");
+            CreateDefaultFPPTransform();
         }
         
         // Initialize offset and distance
@@ -54,6 +69,14 @@ public class CameraController : Singleton<CameraController>
     
     private void Update()
     {
+        // Don't update camera logic during directional casting
+        if (isDirectionalCasting)
+        {
+            // Only handle mouse look for player rotation
+            HandleDirectionalCastingInput();
+            return;
+        }
+        
         // Handle camera rotation
         float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
         float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
@@ -98,14 +121,74 @@ public class CameraController : Singleton<CameraController>
         transform.rotation = rotation;
     }
     
+    private void HandleDirectionalCastingInput()
+    {
+        // Get mouse input for camera rotation only
+        float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
+        float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
+        
+        // Only handle camera vertical rotation (first-person style)
+        verticalRotation -= mouseY;
+        verticalRotation = Mathf.Clamp(verticalRotation, -verticalRotationLimit, verticalRotationLimit);
+        
+        transform.localRotation = Quaternion.Euler(verticalRotation, 0, 0);
+        
+        // Send horizontal mouse input to PlayerController for player rotation
+        PlayerController playerController = PlayerController.instance;
+        if (playerController != null)
+        {
+            playerController.HandleDirectionalCastingRotation(mouseX);
+        }
+    }
+    
     public void StartSpellCasting()
     {
         isCasting = true;
         targetDistance = spellCastingDistance;
     }
     
+    public void StartDirectionalCasting(Transform fppTransform)
+    {
+        isCasting = true;
+        isDirectionalCasting = true;
+        
+        // Store original position and parent
+        originalParent = transform.parent;
+        originalPosition = transform.localPosition;
+        originalRotation = transform.localRotation;
+        
+        // Move camera to FPP position
+        transform.SetParent(fppTransform);
+        transform.localPosition = Vector3.zero;
+        transform.localRotation = Quaternion.identity;
+        
+        Debug.Log("Started directional casting - camera moved to FPP position");
+    }
+    
+    public void StartDirectionalCasting()
+    {
+        if (fppTransform == null)
+        {
+            Debug.LogError("FPP Transform is null! Cannot start directional casting.");
+            return;
+        }
+        
+        StartDirectionalCasting(fppTransform);
+    }
+    
     public void EndSpellCasting()
     {
+        if (isDirectionalCasting)
+        {
+            // Restore original camera position and parent
+            transform.SetParent(originalParent);
+            transform.localPosition = originalPosition;
+            transform.localRotation = originalRotation;
+            
+            isDirectionalCasting = false;
+            Debug.Log("Ended directional casting - camera restored to original position");
+        }
+        
         isCasting = false;
         targetDistance = distanceFromPlayer;
     }
@@ -113,5 +196,24 @@ public class CameraController : Singleton<CameraController>
     public bool IsCasting()
     {
         return isCasting;
+    }
+    
+    public bool IsDirectionalCasting()
+    {
+        return isDirectionalCasting;
+    }
+    
+    private void CreateDefaultFPPTransform()
+    {
+        // Create a default FPP position as a child of the player
+        GameObject fppObject = new GameObject("FPP_Auto");
+        fppObject.transform.SetParent(playerTransform);
+        
+        // Position it at eye level (adjust this value as needed)
+        fppObject.transform.localPosition = new Vector3(0, 1.6f, 0);
+        fppObject.transform.localRotation = Quaternion.identity;
+        
+        fppTransform = fppObject.transform;
+        Debug.Log("Created default FPP transform at player eye level position.");
     }
 } 

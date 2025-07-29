@@ -15,4 +15,4 @@ MonoBehaviour:
   runeIcon: {fileID: 0}
   inputKey: 111
   modifierType: 4
-  modifierValue: 0
+  modifierValue: 1.2
